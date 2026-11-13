@@ -86,107 +86,156 @@ a {
 </div>
 
 <script>
+
 async function loadAPOD() {
   const status = document.getElementById("status");
 
   try {
+    // Retrieve today's APOD
     const response = await fetch(
-      "https://science.nasa.gov/wp-json/wp/v2/apod-basic?per_page=1",
+      "https://science.nasa.gov/wp-json/wp/v2/apod-basic",
       { cache: "no-store" }
     );
 
-    if (!response.ok) {
-      throw new Error("NASA returned status " + response.status);
-    }
+    if (!response.ok) throw new Error("NASA feed unavailable");
 
-    const results = await response.json();
-    const data = Array.isArray(results) ? results[0] : results;
+    const result = await response.json();
+    const today = Array.isArray(result) ? result[0] : result;
 
-    if (!data) throw new Error("No APOD data returned.");
+    let selected = today;
+    let archiveImage = false;
 
-    // Extract the actual image from NASA's HTML
-    const page = new DOMParser().parseFromString(
-      data.basic_html || "", "text/html"
-    );
+    // Check whether today's entry has a usable image
+    const todayImage = await getImage(today);
 
-    let imageURL = "";
-
-    // Look for the APOD image in the HTML
-    const metaImage = page.querySelector(
-      'meta[property="og:image"]'
-    );
-
-    if (metaImage) {
-      imageURL = metaImage.content;
-    }
-
-    if (!imageURL) {
-      const images = Array.from(page.querySelectorAll("img"));
-
-      const candidate = images.find(img => {
-        const src =
-          img.getAttribute("data-src") ||
-          img.getAttribute("src");
-
-        return src &&
-          !src.includes("nasa-logo") &&
-          !src.startsWith("data:");
-      });
-
-      if (candidate) {
-        imageURL =
-          candidate.getAttribute("data-src") ||
-          candidate.getAttribute("src");
-      }
-    }
-
-    // Use NASA's featured image as a fallback
-    if (!imageURL && data.hdurl &&
-        !data.hdurl.includes("nasa-logo")) {
-      imageURL = data.hdurl;
-    }
-
-    if (!imageURL) {
-      throw new Error(
-        "NASA's response did not contain a usable image URL."
+    if (!todayImage) {
+      // Retrieve random historical APOD entries
+      const archiveResponse = await fetch(
+        "https://science.nasa.gov/wp-json/wp/v2/apod-basic?count=25",
+        { cache: "no-store" }
       );
+
+      if (!archiveResponse.ok) {
+        throw new Error("Unable to retrieve NASA archive");
+      }
+
+      const archive = await archiveResponse.json();
+
+      const candidates = Array.isArray(archive)
+        ? archive
+        : [archive];
+
+      // Find a random entry with a usable image
+      const shuffled = candidates.sort(
+        () => Math.random() - 0.5
+      );
+
+      for (const entry of shuffled) {
+        const image = await getImage(entry);
+
+        if (image) {
+          selected = entry;
+          selected._image = image;
+          archiveImage = true;
+          break;
+        }
+      }
+
+      if (!selected._image) {
+        throw new Error("No usable archive photographs found");
+      }
+    } else {
+      selected._image = todayImage;
     }
 
+    // Display selected image
     const img = document.createElement("img");
     img.className = "image";
-    img.src = imageURL;
-    img.alt = data.alt || data.title || "NASA APOD";
+    img.src = selected._image;
+    img.alt = selected.title || "NASA astronomy photograph";
 
     img.onerror = () => {
-      status.textContent =
-        "NASA's image could not be loaded. Please visit the original entry.";
+      status.textContent = "Unable to load the selected image.";
     };
 
     status.replaceWith(img);
 
     document.getElementById("title").textContent =
-      data.title || "Astronomy Picture of the Day";
+      selected.title || "Astronomy Picture of the Day";
 
     document.getElementById("date").textContent =
-      data.date || "";
+      archiveImage
+        ? "ARCHIVE IMAGE · " + selected.date
+        : selected.date;
 
     document.getElementById("credit").textContent =
-      data.copyright || "";
+      selected.copyright || selected.credit || "NASA";
 
     document.getElementById("link").href =
-      data.permalink || data.url;
+      selected.permalink || selected.url;
 
     document.getElementById("details").hidden = false;
 
+    // Update heading to reflect archive selection
+    if (archiveImage) {
+      document.querySelector(".header h1").textContent =
+        "FROM THE NASA ASTRONOMY ARCHIVE";
+    }
+
   } catch (error) {
     console.error("APOD Error:", error);
-
     status.textContent =
-      "Unable to load today's NASA image: " + error.message;
+      "Unable to load an astronomical photograph. Please try again later.";
   }
 }
 
+// Extract an actual photograph from an APOD entry
+async function getImage(data) {
+  if (!data) return null;
+
+  const page = new DOMParser().parseFromString(
+    data.basic_html || "",
+    "text/html"
+  );
+
+  const metaImage = page.querySelector(
+    'meta[property="og:image"]'
+  );
+
+  let imageURL = metaImage?.content || "";
+
+  if (!imageURL && data.hdurl &&
+      !data.hdurl.includes("nasa-logo")) {
+    imageURL = data.hdurl;
+  }
+
+  if (!imageURL) {
+    const candidate = Array.from(
+      page.querySelectorAll("img")
+    ).find(img => {
+      const src =
+        img.getAttribute("data-src") ||
+        img.getAttribute("src");
+
+      return src &&
+        !src.startsWith("data:") &&
+        !src.includes("nasa-logo");
+    });
+
+    if (candidate) {
+      imageURL =
+        candidate.getAttribute("data-src") ||
+        candidate.getAttribute("src");
+    }
+  }
+
+  if (!imageURL) return null;
+
+  return imageURL;
+}
+
 loadAPOD();
+
 </script>
 
 </body>
