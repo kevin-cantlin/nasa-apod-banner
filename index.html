@@ -67,6 +67,7 @@
 </div>
 
 <script>
+
 async function loadAPOD() {
   const status = document.getElementById("status");
 
@@ -75,43 +76,60 @@ async function loadAPOD() {
       "https://science.nasa.gov/wp-json/wp/v2/apod-basic"
     );
 
-    if (!response.ok) throw new Error("NASA feed unavailable");
+    if (!response.ok) {
+      throw new Error("NASA feed unavailable");
+    }
 
     const data = await response.json();
 
-    if (data.media_type !== "image" || !data.hdurl) {
-      status.textContent =
-        "Today's NASA feature is not a photograph. " +
-        "Visit NASA APOD to explore it.";
-      return;
-    }
-
-    const img = document.createElement("img");
-    img.className = "image";
-    img.src = data.hdurl;
-    img.alt = data.alt || data.title;
-
-    status.replaceWith(img);
-
     document.getElementById("title").textContent =
-      data.title;
+      data.title || "Astronomy Picture of the Day";
 
     document.getElementById("date").textContent =
-      data.date;
+      data.date || "";
 
     document.getElementById("credit").textContent =
-      data.credit ? "Image credit: " + data.credit : "";
+      data.credit || data.copyright || "NASA";
 
-    document.getElementById("link").href =
-      data.permalink;
+    const link = document.getElementById("link");
+    link.href = data.permalink || data.url || 
+      "https://apod.nasa.gov/apod/astropix.html";
+
+    const imageURL = data.hdurl;
+
+    if (imageURL) {
+      const img = document.createElement("img");
+
+      img.className = "image";
+      img.src = imageURL;
+      img.alt = data.alt || data.title || "NASA astronomy image";
+
+      img.onerror = () => {
+        img.remove();
+        status.textContent =
+          "Image unavailable. Visit NASA for today's feature.";
+      };
+
+      status.replaceWith(img);
+
+    } else {
+      status.textContent =
+        "Today's feature does not have an available image preview. " +
+        "Visit NASA to explore it.";
+    }
 
     document.getElementById("details").hidden = false;
 
   } catch (error) {
     status.textContent =
-      "Unable to load today's NASA image.";
+      "Unable to load today's NASA image. Please try again later.";
+
+    console.error(error);
   }
 }
+
+loadAPOD();
+
 
 loadAPOD();
 </script>
